@@ -432,7 +432,15 @@ BarWidget {
     id: procFactory
     Process {
       property var callback: null
+      property string stdinText: ""
       stdout: StdioCollector { id: out; waitForEnd: true }
+      stdinEnabled: stdinText !== ""
+      onStarted: {
+        if (stdinText !== "") {
+          write(stdinText)
+          stdinEnabled = false
+        }
+      }
       onExited: function(exitCode, exitStatus) {
         var cb = callback
         var txt = out.text
@@ -442,10 +450,14 @@ BarWidget {
       }
     }
   }
-  function runCmd(args, cb) {
+  function runCmd(args, cb, stdinText) {
     try {
       root.dbg("runCmd " + args.slice(0, 4).join(" "))
-      var p = procFactory.createObject(root, { command: args, callback: cb })
+      var p = procFactory.createObject(root, {
+        command: args,
+        callback: cb,
+        stdinText: stdinText || ""
+      })
       p.running = true
     } catch (e) { root.dbg("runCmd create failed"); if (cb) cb("", 1) }
   }
@@ -860,7 +872,18 @@ BarWidget {
   function saveSettings() {
     var p = settingsPath()
     if (p === "" || !root.settingsLoaded) return
-    runCmd(["python3", "-c", "import json,os,sys; p=sys.argv[1]; s=sys.argv[2]; m=sys.argv[3]; g=sys.argv[4]; b=sys.argv[5]; t=sys.argv[6]; a=sys.argv[7]; ls=sys.argv[8]; f=sys.argv[9]; fav=sys.argv[10];\nd={}\ntry:\n d=json.load(open(p))\nexcept Exception:\n d={}\nif not isinstance(d, dict):\n d={}\nd['visualStyle']=s;\nd['musicPlayer']=m;\ntry:\n d['sensitivity']=float(g)\nexcept Exception:\n pass\nd['barMode']=b;\nd['lastTitle']=t;\nd['lastArtist']=a;\nd['lastSource']=ls;\nd['visualFps']=int(f);\ntry:\n d['favoriteStations']=json.loads(fav)\nexcept Exception:\n pass\nos.makedirs(os.path.dirname(p), exist_ok=True);\nopen(p,'w').write(json.dumps(d))", p, root.visualStyle, root.musicPlayerPref, String(root.sensitivity), root.barMode, root.lastTitle, root.lastArtist, root.lastSource, String(root.visualFps), JSON.stringify(root.favoriteStations)], null)
+    var payload = JSON.stringify({
+      visualStyle: root.visualStyle,
+      musicPlayer: root.musicPlayerPref,
+      sensitivity: String(root.sensitivity),
+      barMode: root.barMode,
+      lastTitle: root.lastTitle,
+      lastArtist: root.lastArtist,
+      lastSource: root.lastSource,
+      visualFps: String(root.visualFps),
+      favoriteStations: root.favoriteStations
+    })
+    runCmd(["python3", "-c", "import json,os,sys; p=sys.argv[1];\ntry:\n d=json.load(open(p))\nexcept Exception:\n d={}\nif not isinstance(d, dict):\n d={}\ntry:\n v=json.load(sys.stdin)\n d['visualStyle']=v['visualStyle']\n d['musicPlayer']=v['musicPlayer']\n d['sensitivity']=float(v['sensitivity'])\n d['barMode']=v['barMode']\n d['lastTitle']=v['lastTitle']\n d['lastArtist']=v['lastArtist']\n d['lastSource']=v['lastSource']\n d['visualFps']=int(v['visualFps'])\n d['favoriteStations']=v['favoriteStations']\nexcept Exception:\n pass\nos.makedirs(os.path.dirname(p), exist_ok=True);\nopen(p,'w').write(json.dumps(d))", p], null, payload)
   }
   function saveMusicPlayer() {
     saveSettings()
